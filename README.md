@@ -3,16 +3,16 @@
 # Blitz Trainer
 
 [![Build](https://github.com/phoenixd123/blitztrainer/actions/workflows/build.yml/badge.svg)](https://github.com/phoenixd123/blitztrainer/actions/workflows/build.yml)
-[![Latest release](https://img.shields.io/github/v/release/phoenixd123/blitztrainer)](https://github.com/phoenixd123/blitztrainer/releases/latest)
+[![Latest release](https://img.shields.io/github/v/release/phoenixd123/blitztrainer)](https://github.com/phoenixd123/blitztrainer/releases)
 
-**[Download the latest .geode](https://github.com/phoenixd123/blitztrainer/releases/latest/download/phoenixd123.blitz-trainer.geode)** · [Website](https://phoenixd123.github.io/blitztrainer/) · [Report a bug](https://github.com/phoenixd123/blitztrainer/issues)
+**[Download from Releases](https://github.com/phoenixd123/blitztrainer/releases)** · [Website](https://phoenixd123.github.io/blitztrainer/) · [Report a bug](https://github.com/phoenixd123/blitztrainer/issues)
 
 A Geode mod for Geometry Dash **2.2081** that automates the Blitzkrieg practice method: it builds stages from a level's start positions, tracks every attempt, and moves your spawn to the next unfinished range for you.
 
 ## Install
 
 1. Install [Geode](https://geode-sdk.org) (5.10.1 or newer) for GD 2.2081.
-2. Download `phoenixd123.blitz-trainer.geode` from the [latest release](https://github.com/phoenixd123/blitztrainer/releases/latest) and copy it into your `geode/mods` folder, or in game open **Geode > Mods > Install from file**.
+2. Download `phoenixd123.blitz-trainer.geode` from the [latest release](https://github.com/phoenixd123/blitztrainer/releases) and copy it into your `geode/mods` folder, or in game open **Geode > Mods > Install from file**.
 3. Geode installs the `geode.node-ids` dependency for you. Restart the game.
 
 ## Use
