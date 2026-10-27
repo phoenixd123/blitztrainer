@@ -1,0 +1,212 @@
+{
+  "geode": "5.10.1",
+  "gd": {
+    "win": "2.2081",
+    "android": "2.2081",
+    "mac": "2.2081",
+    "ios": "2.2081"
+  },
+  "id": "phoenixd123.blitz-trainer",
+  "name": "Blitz Trainer",
+  "version": "v1.0.0",
+  "developer": "phoenixd123",
+  "description": "Blitzkrieg practice that tracks itself and moves your spawn for you",
+  "tags": [
+    "gameplay",
+    "utility",
+    "interface",
+    "enhancement",
+    "offline"
+  ],
+  "dependencies": {
+    "geode.node-ids": ">=v1.23.0"
+  },
+  "links": {
+    "homepage": "https://phoenixd123.github.io/blitztrainer/",
+    "source": "https://github.com/phoenixd123/blitztrainer"
+  },
+  "issues": {
+    "info": "Report bugs on GitHub. Include the newest file from geode/logs.",
+    "url": "https://github.com/phoenixd123/blitztrainer/issues"
+  },
+  "settings": {
+    "training-title": {
+      "type": "title",
+      "name": "Training"
+    },
+    "stage-style": {
+      "type": "string",
+      "name": "Default stage style",
+      "description": "Used when a profile is created automatically. <cy>Classic</c> is Rudder's original method (every window of 1, 2, 3 ... sections). <cy>Lite</c> uses windows of 1, 2, 4, 8 ... sections for long levels.",
+      "default": "Classic",
+      "one-of": [
+        "Classic",
+        "Lite"
+      ]
+    },
+    "required-passes": {
+      "type": "int",
+      "name": "Passes per range",
+      "description": "How many times you need to beat a range before it counts as done. 2 or 3 builds real consistency.",
+      "default": 1,
+      "min": 1,
+      "max": 10,
+      "control": {
+        "slider": true,
+        "arrows": true,
+        "slider-step": 1,
+        "arrow-step": 1
+      }
+    },
+    "require-consecutive": {
+      "type": "bool",
+      "name": "Passes must be in a row",
+      "description": "A failed attempt on a range resets its pass streak.",
+      "default": false
+    },
+    "credit-all-passed": {
+      "type": "bool",
+      "name": "Long runs credit shorter ranges",
+      "description": "A run that covers several unfinished ranges of the current stage gives each of them a pass, not just the one you aimed for.",
+      "default": true
+    },
+    "auto-route": {
+      "type": "bool",
+      "name": "Auto-move spawn",
+      "description": "When the range you're on is finished, your next respawn moves to the next unfinished range. No more switching start positions by hand.",
+      "default": true
+    },
+    "auto-create-profile": {
+      "type": "bool",
+      "name": "Auto-create profiles",
+      "description": "Start tracking as soon as you open a level that has start positions.",
+      "default": false
+    },
+    "track-practice": {
+      "type": "bool",
+      "name": "Track practice mode",
+      "description": "Count practice-mode attempts that start from a start position. Attempts from practice checkpoints are never counted.",
+      "default": false
+    },
+    "record-untracked-deaths": {
+      "type": "bool",
+      "name": "Heatmap includes all deaths",
+      "description": "Add deaths from spawns that aren't training starts (e.g. practice checkpoints) to the death heatmap.",
+      "default": true
+    },
+    "anticheat-title": {
+      "type": "title",
+      "name": "Run validation"
+    },
+    "detect-noclip": {
+      "type": "bool",
+      "name": "Ignore noclip runs",
+      "description": "Don't count attempts where you touched a hazard and survived.",
+      "default": true
+    },
+    "detect-speedhack": {
+      "type": "bool",
+      "name": "Ignore speedhacked runs",
+      "description": "Don't count attempts where game speed didn't match real time (lag spikes are ignored).",
+      "default": true
+    },
+    "hud-title": {
+      "type": "title",
+      "name": "HUD"
+    },
+    "show-hud": {
+      "type": "bool",
+      "name": "Show in-level HUD",
+      "description": "Shows the current stage, your target range, passes and a mini map of start positions.",
+      "default": true
+    },
+    "hud-position": {
+      "type": "string",
+      "name": "HUD position",
+      "default": "Top Left",
+      "one-of": [
+        "Top Left",
+        "Top Right",
+        "Bottom Left",
+        "Bottom Right"
+      ]
+    },
+    "hud-scale": {
+      "type": "float",
+      "name": "HUD scale",
+      "default": 1.0,
+      "min": 0.5,
+      "max": 2.0,
+      "control": {
+        "slider": true,
+        "slider-step": 0.05,
+        "arrow-step": 0.1
+      }
+    },
+    "hud-opacity": {
+      "type": "float",
+      "name": "HUD opacity",
+      "default": 0.85,
+      "min": 0.1,
+      "max": 1.0,
+      "control": {
+        "slider": true,
+        "slider-step": 0.05,
+        "arrow-step": 0.1
+      }
+    },
+    "pause-summary": {
+      "type": "bool",
+      "name": "Stage summary in pause menu",
+      "default": true
+    },
+    "feedback-title": {
+      "type": "title",
+      "name": "Feedback"
+    },
+    "show-notifications": {
+      "type": "bool",
+      "name": "Notifications",
+      "description": "Pop-ups for passes, finished ranges, finished stages and ignored runs.",
+      "default": true
+    },
+    "play-sounds": {
+      "type": "bool",
+      "name": "Sounds",
+      "description": "Play a sound on passes, finished ranges and finished stages (uses your SFX volume).",
+      "default": true
+    },
+    "keys-title": {
+      "type": "title",
+      "name": "Keybinds"
+    },
+    "key-prev-start": {
+      "type": "keybind",
+      "name": "Previous start position",
+      "default": [
+        "Q"
+      ]
+    },
+    "key-next-start": {
+      "type": "keybind",
+      "name": "Next start position",
+      "default": [
+        "E"
+      ]
+    },
+    "key-go-target": {
+      "type": "keybind",
+      "name": "Go to next unfinished range",
+      "default": [
+        "T"
+      ]
+    },
+    "key-toggle-hud": {
+      "type": "keybind",
+      "name": "Toggle HUD",
+      "default": [
+        "H"
+      ]
+    }
+  }
+}

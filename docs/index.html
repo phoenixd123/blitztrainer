@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blitz Trainer – Blitzkrieg practice for Geometry Dash</title>
+<meta name="description" content="A Geode mod for Geometry Dash 2.2 that runs the Blitzkrieg practice method for you: stages from start positions, automatic tracking and automatic spawn switching.">
+<meta property="og:title" content="Blitz Trainer">
+<meta property="og:description" content="Blitzkrieg practice for Geometry Dash that tracks itself and moves your spawn for you.">
+<meta property="og:image" content="https://raw.githubusercontent.com/phoenixd123/blitztrainer/main/logo.png">
+<link rel="icon" href="logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Lilita+One&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --night: #1d1838;
+    --night-2: #262049;
+    --night-3: #342c63;
+    --ink: #f2eefc;
+    --ink-soft: #b9b0dc;
+    --pink: #ff5a8c;
+    --gold: #ffd75e;
+    --mint: #78dc8c;
+    --radius-big: 22px;
+    --radius-small: 8px;
+    --measure: 64ch;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--night);
+    color: var(--ink);
+    font: 400 1.0625rem/1.6 "Atkinson Hyperlegible", system-ui, sans-serif;
+  }
+  a { color: var(--gold); text-underline-offset: 3px; }
+  a:hover { color: #ffe68f; }
+  :focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; border-radius: 4px; }
+  h1, h2, h3 { font-family: "Lilita One", "Atkinson Hyperlegible", sans-serif; font-weight: 400; line-height: 1.05; margin: 0; }
+  h2 { font-size: clamp(1.9rem, 4vw, 2.6rem); color: var(--gold); margin-bottom: 1rem; }
+  h3 { font-size: 1.3rem; margin-bottom: .35rem; }
+  p { margin: 0 0 1rem; max-width: var(--measure); }
+  code, kbd {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .92em;
+  }
+  kbd {
+    display: inline-block; min-width: 1.9em; text-align: center;
+    padding: .1em .45em; border-radius: 6px;
+    background: var(--night-3); border: 1px solid #4a4085; border-bottom-width: 3px;
+    color: var(--ink);
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+  /* top bar */
+  .bar { display: flex; align-items: center; justify-content: space-between; padding: 20px 0; gap: 16px; }
+  .brand { white-space: nowrap; display: flex; align-items: center; gap: 12px; color: var(--ink); text-decoration: none; font-family: "Lilita One", sans-serif; font-size: 1.35rem; }
+  .brand img { width: 40px; height: 40px; }
+  .bar nav { display: flex; gap: 22px; flex-wrap: wrap; }
+  .bar nav a { color: var(--ink-soft); text-decoration: none; }
+  .bar nav a:hover { color: var(--ink); }
+
+  /* hero */
+  .hero { display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px; align-items: center; padding: 40px 0 72px; }
+  .hero h1 { font-size: clamp(2.8rem, 7vw, 5.2rem); letter-spacing: .5px; }
+  .hero h1 .line2 { display: block; color: var(--pink); }
+  .lede { font-size: 1.25rem; color: var(--ink-soft); margin: 1.25rem 0 2rem; max-width: 34ch; }
+  .actions { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    font: 400 1.25rem "Lilita One", sans-serif; text-decoration: none;
+    padding: 14px 26px; border-radius: 999px;
+    background: var(--pink); color: #2a0a17;
+    box-shadow: 0 5px 0 #b0325a;
+    transition: transform .08s ease, box-shadow .08s ease;
+  }
+  .btn:hover { color: #2a0a17; transform: translateY(-1px); }
+  .btn:active { transform: translateY(4px); box-shadow: 0 1px 0 #b0325a; }
+  .btn.alt { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 2px var(--night-3); }
+  .btn.alt:hover { color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink-soft); }
+  .compat { margin-top: 1.25rem; color: var(--ink-soft); font-size: .95rem; }
+
+  /* the staircase */
+  .stair {
+    margin: 0;
+    background: var(--night-2); border-radius: var(--radius-big);
+    padding: 26px 26px 22px;
+    border: 1px solid #3a3170;
+  }
+  .stair figcaption { color: var(--ink-soft); font-size: .92rem; margin-top: 14px; }
+  .level { position: relative; height: 14px; border-radius: 7px; background: #120f26; margin-bottom: 18px; }
+  .tick { position: absolute; top: -5px; width: 3px; height: 24px; border-radius: 2px; background: var(--gold); }
+  .rows { display: grid; gap: 7px; }
+  .row { position: relative; height: 16px; }
+  .seg {
+    position: absolute; top: 0; height: 16px; border-radius: 5px;
+    background: var(--night-3);
+  }
+  .seg.done { background: var(--mint); }
+  .seg.now { background: var(--pink); }
+  .stage-label { position: absolute; left: -2px; top: -1px; font-size: .75rem; color: var(--ink-soft); display: none; }
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 14px; font-size: .9rem; color: var(--ink-soft); }
+  .legend span::before { content: ""; display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 7px; vertical-align: -1px; }
+  .legend .l-done::before { background: var(--mint); }
+  .legend .l-now::before { background: var(--pink); }
+  .legend .l-todo::before { background: var(--night-3); }
+  .legend .l-sp::before { background: var(--gold); width: 4px; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .seg.animate { transform-origin: left center; animation: grow .5s cubic-bezier(.2,.8,.2,1) both; }
+    @keyframes grow { from { transform: scaleX(0); opacity: 0; } to { transform: scaleX(1); opacity: 1; } }
+  }
+
+  /* sections */
+  section { padding: 64px 0; }
+  .band { background: var(--night-2); }
+  .split { display: grid; grid-template-columns: 1fr 1.25fr; gap: 56px; align-items: start; }
+
+  .steps { list-style: none; padding: 0; margin: 0; counter-reset: s; display: grid; gap: 22px; }
+  .steps li { counter-increment: s; display: grid; grid-template-columns: 52px 1fr; gap: 16px; align-items: start; }
+  .steps li::before {
+    content: counter(s);
+    font: 400 1.6rem/52px "Lilita One", sans-serif; text-align: center;
+    width: 52px; height: 52px; border-radius: 50%;
+    background: var(--gold); color: #2b2205;
+  }
+  .steps p { margin: 0; color: var(--ink-soft); }
+
+  .features { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 34px 48px; margin-top: 8px; }
+  .features div { border-left: 3px solid var(--pink); padding-left: 18px; }
+  .features p { color: var(--ink-soft); margin: 0; }
+
+  table { border-collapse: collapse; width: 100%; max-width: 560px; }
+  td { padding: 12px 0; border-bottom: 1px solid var(--night-3); vertical-align: top; }
+  td:first-child { width: 110px; }
+
+  .rules { padding-left: 1.3rem; max-width: var(--measure); color: var(--ink-soft); }
+  .rules li { margin-bottom: .5rem; }
+  .rules strong { color: var(--ink); }
+
+  .note { background: #2c1f3e; border-left: 4px solid var(--gold); border-radius: var(--radius-small); padding: 16px 20px; max-width: var(--measure); }
+  .note p:last-child { margin-bottom: 0; }
+
+  details { border-bottom: 1px solid var(--night-3); padding: 14px 0; max-width: 760px; }
+  summary { cursor: pointer; font-weight: 700; font-size: 1.1rem; list-style-position: outside; }
+  details[open] summary { color: var(--gold); }
+  details p { color: var(--ink-soft); margin: .6rem 0 0; }
+
+  footer { padding: 40px 0 56px; color: var(--ink-soft); font-size: .95rem; }
+  footer p { max-width: none; }
+
+  @media (max-width: 860px) {
+    .hero, .split { grid-template-columns: 1fr; gap: 36px; }
+    .features { grid-template-columns: 1fr; }
+    .hero { padding-top: 16px; }
+  }
+  @media (max-width: 520px) {
+    .wrap { padding: 0 16px; }
+    .bar nav a:not(.keep) { display: none; }
+    .btn { font-size: 1.1rem; padding: 12px 20px; }
+  }
+</style>
+</head>
+<body>
+<header class="wrap bar">
+  <a class="brand" href="#top"><img src="logo.png" alt="">Blitz Trainer</a>
+  <nav aria-label="Page">
+    <a href="#install">Install</a>
+    <a href="#features">Features</a>
+    <a href="#counting">How runs count</a>
+    <a class="keep" href="https://github.com/phoenixd123/blitztrainer">GitHub</a>
+  </nav>
+</header>
+
+<main id="top">
+  <div class="wrap hero">
+    <div>
+      <h1>Grind the demon.<span class="line2">Skip the spreadsheet.</span></h1>
+      <p class="lede">Blitz Trainer runs the Blitzkrieg practice method inside Geometry Dash. It builds your stages, counts every pass and moves your spawn to the next section you haven't beaten.</p>
+      <div class="actions">
+        <a class="btn" href="https://github.com/phoenixd123/blitztrainer/releases/latest/download/phoenixd123.blitz-trainer.geode">Download .geode</a>
+        <a class="btn alt" href="https://github.com/phoenixd123/blitztrainer">View source</a>
+      </div>
+      <p class="compat">Geometry Dash 2.2081 with Geode 5.10.1 or newer. Windows, macOS, Android and iOS.</p>
+    </div>
+
+    <figure class="stair" aria-label="Diagram of Blitzkrieg stages over a level">
+      <div class="level" id="level"></div>
+      <div class="rows" id="rows"></div>
+      <div class="legend" aria-hidden="true">
+        <span class="l-sp">start position</span>
+        <span class="l-done">beaten</span>
+        <span class="l-now">your next target</span>
+        <span class="l-todo">to do</span>
+      </div>
+      <figcaption>Each row is a stage. Stage 1 is every single section, stage 2 every pair, and so on until the last stage is the whole level.</figcaption>
+    </figure>
+  </div>
+
+  <section class="band" id="install">
+    <div class="wrap split">
+      <div>
+        <h2>Set up in a minute</h2>
+        <p>You need a copy of the level with start positions in it. 12 to 18 start positions works best.</p>
+      </div>
+      <ol class="steps">
+        <li><div><h3>Install Geode</h3><p>Get it from <a href="https://geode-sdk.org">geode-sdk.org</a> if you don't have it yet.</p></div></li>
+        <li><div><h3>Add the mod</h3><p>In game open Geode, then Mods, then Install from file, and pick <code>phoenixd123.blitz-trainer.geode</code>. Geode installs the Node IDs dependency for you. Restart the game.</p></div></li>
+        <li><div><h3>Start a profile</h3><p>Open your startpos copy, pause, press the pink Blitz Trainer button and choose Classic or Lite.</p></div></li>
+        <li><div><h3>Play</h3><p>The HUD shows your stage and target. When a range is beaten your next respawn moves on by itself.</p></div></li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="wrap">
+      <h2>What it does</h2>
+      <div class="features">
+        <div><h3>Moves your spawn for you</h3><p>Finish a range and the next respawn starts at the next unfinished one. No startpos switcher mod needed.</p></div>
+        <div><h3>Knows which start position you used</h3><p>It checks where you actually spawned, not just which start position the game says is selected, so runs land on the right range.</p></div>
+        <div><h3>Shows the game's own percentages</h3><p>It matches GD's 2.1 or 2.2 percentage display automatically, so 41% in the mod is 41% in the level.</p></div>
+        <div><h3>Consistency mode</h3><p>Require 1 to 10 passes per range, and optionally make them count only in a row.</p></div>
+        <div><h3>Classic or Lite stages</h3><p>Classic is Rudder's original method. Lite uses windows of 1, 2, 4, 8 sections for long levels, with far fewer ranges.</p></div>
+        <div><h3>Death heatmap</h3><p>See where you die most and which ranges have the lowest pass rate.</p></div>
+        <div><h3>Keeps progress when the level changes</h3><p>Added or moved a start position? Rebuild keeps the stats of every range whose ends didn't move.</p></div>
+        <div><h3>Honest runs only</h3><p>Noclip and speedhack attempts are ignored. Lag spikes and speed-change triggers aren't mistaken for cheats.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="keys">
+    <div class="wrap split">
+      <div>
+        <h2>Keys</h2>
+        <p>Change any of these in the mod's settings.</p>
+      </div>
+      <table>
+        <tbody>
+          <tr><td><kbd>Q</kbd> <kbd>E</kbd></td><td>Previous or next start position</td></tr>
+          <tr><td><kbd>T</kbd></td><td>Go to your next unfinished range</td></tr>
+          <tr><td><kbd>H</kbd></td><td>Show or hide the HUD</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="counting">
+    <div class="wrap">
+      <h2>How runs count</h2>
+      <p>Every attempt goes to one target range in your current stage. The mod picks it in this order:</p>
+      <ol class="rules">
+        <li><strong>An unfinished range you fully beat,</strong> earliest first.</li>
+        <li><strong>The unfinished range that starts where you spawned.</strong></li>
+        <li><strong>The unfinished range you got furthest through.</strong></li>
+        <li><strong>The same rules for finished ranges,</strong> which then get extra passes.</li>
+      </ol>
+      <p>The target gets the attempt, the time and your best progress. With "Long runs credit shorter ranges" on, a run that beats several unfinished ranges gives each of them a pass.</p>
+      <div class="note">
+        <p>Attempts from practice-mode checkpoints don't count, because they don't start at a start position. Turn on "Track practice mode" to count practice attempts that do.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="faq">
+    <div class="wrap">
+      <h2>Questions</h2>
+      <details>
+        <summary>Does it work on GD 2.2091?</summary>
+        <p>Not yet. Geode itself doesn't support 2.2091 yet. A new build will follow once it does.</p>
+      </details>
+      <details>
+        <summary>Does it work in platformer levels?</summary>
+        <p>No. The Blitzkrieg method is built around classic levels.</p>
+      </details>
+      <details>
+        <summary>Where is my progress saved?</summary>
+        <p>In your GD save folder under <code>geode/mods/phoenixd123.blitz-trainer/profiles</code>, one file per level. You can also export a profile to your clipboard and import it on another device.</p>
+      </details>
+      <details>
+        <summary>My level has start positions with an order or reverse gameplay.</summary>
+        <p>Sections always follow left-to-right position, so play order can differ in those levels. The mod warns you when it finds them.</p>
+      </details>
+      <details>
+        <summary>I found a bug.</summary>
+        <p><a href="https://github.com/phoenixd123/blitztrainer/issues">Open an issue on GitHub</a> and attach the newest file from your <code>geode/logs</code> folder.</p>
+      </details>
+    </div>
+  </section>
+</main>
+
+<footer class="wrap">
+  <p>The Blitzkrieg method was created by Rudder. Blitz Trainer is an independent mod and isn't affiliated with RobTop Games. MIT licensed.</p>
+</footer>
+
+<script>
+  // Draw the stage staircase for a level with 7 start positions (8 sections).
+  (function () {
+    var sp = [9, 21, 33, 46, 58, 70, 84]; // start position percents
+    var cps = [0].concat(sp, [100]);
+    var n = cps.length - 1;
+    var level = document.getElementById("level");
+    sp.forEach(function (p) {
+      var t = document.createElement("span");
+      t.className = "tick";
+      t.style.left = "calc(" + p + "% - 1.5px)";
+      level.appendChild(t);
+    });
+
+    var rows = document.getElementById("rows");
+    var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var currentStage = 3; // stages before this one are finished
+    var delay = 0;
+    for (var size = 1; size <= n; size++) {
+      var row = document.createElement("div");
+      row.className = "row";
+      // show non-overlapping windows so each row reads clearly
+      var starts = [];
+      for (var i = 0; i + size <= n; i += size) starts.push(i);
+      if (starts[starts.length - 1] + size < n) starts.push(n - size);
+      starts.forEach(function (from, k) {
+        var seg = document.createElement("span");
+        var a = cps[from], b = cps[from + size];
+        seg.className = "seg";
+        if (size < currentStage) seg.className += " done";
+        else if (size === currentStage) seg.className += k < 1 ? " done" : (k === 1 ? " now" : "");
+        seg.style.left = "calc(" + a + "% + 1px)";
+        seg.style.width = "calc(" + (b - a) + "% - 2px)";
+        if (!reduce) {
+          seg.className += " animate";
+          seg.style.animationDelay = delay + "ms";
+          delay += 45;
+        }
+        row.appendChild(seg);
+      });
+      rows.appendChild(row);
+    }
+  })();
+</script>
+</body>
+</html>
