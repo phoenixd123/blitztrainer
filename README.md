@@ -54,7 +54,7 @@ Bump `version` in `mod.json` and add a `# vX.Y.Z` section to `changelog.md`, the
 
 ## Build from source
 
-Push to GitHub and the included workflow (`.github/workflows/build.yml`) builds Windows, macOS, iOS and Android and uploads a combined `.geode`. Locally:
+Push to GitHub and the included workflow (`.github/workflows/build.yml`) builds Windows, macOS and Android and uploads a combined `.geode`. Locally:
 
 ```sh
 export GEODE_SDK=/path/to/geode-sdk   # Geode SDK 5.10.1
@@ -70,6 +70,7 @@ c++ -std=c++20 -Isrc tests/model_test.cpp src/core/Model.cpp -o model_test && ./
 ## Notes
 
 - GD 2.2091 came out recently and Geode doesn't support it yet. When Geode updates, change the `gd` versions and `geode` version in `mod.json` and rebuild.
+- iOS is paused for now: Geode's iOS bindings are mid-update for GD 2.2091 and currently fail to compile. Re-add `"ios": "2.2081"` to `mod.json` and the iOS job to the workflow once that's fixed upstream.
 - Platformer levels aren't supported.
 - Levels with ordered or reverse-gameplay start positions are split by X position; the mod warns you about them.
 - The Blitzkrieg method was created by Rudder. This mod is an independent implementation, inspired by Zhulis' Blitzkrieg mod.
