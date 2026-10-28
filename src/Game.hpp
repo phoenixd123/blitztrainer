@@ -18,6 +18,10 @@ int startPosCount();
 bool profileMismatch();
 void clearMismatch();
 
+// Re-checks the active profile against the level's start positions
+// (e.g. after an undo brought back an older profile).
+void recheckProfile();
+
 // Checkpoint index of the current spawn point, or -1.
 int currentSpawnIndex();
 

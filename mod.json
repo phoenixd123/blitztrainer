@@ -7,7 +7,7 @@
   },
   "id": "phoenixd123.blitz-trainer",
   "name": "Blitz Trainer",
-  "version": "v1.0.0",
+  "version": "v1.1.0",
   "developer": "phoenixd123",
   "description": "Blitzkrieg practice that tracks itself and moves your spawn for you",
   "tags": [
@@ -75,6 +75,17 @@
       "description": "When the range you're on is finished, your next respawn moves to the next unfinished range. No more switching start positions by hand.",
       "default": true
     },
+    "route-order": {
+      "type": "string",
+      "name": "Route order",
+      "description": "Which unfinished range auto-move and <cy>Go to target</c> pick next. <cy>In order</c> goes left to right, <cy>Weakest first</c> picks the range with the lowest pass rate, <cy>Random</c> mixes it up.",
+      "default": "In order",
+      "one-of": [
+        "In order",
+        "Weakest first",
+        "Random"
+      ]
+    },
     "auto-create-profile": {
       "type": "bool",
       "name": "Auto-create profiles",
@@ -92,6 +103,26 @@
       "name": "Heatmap includes all deaths",
       "description": "Add deaths from spawns that aren't training starts (e.g. practice checkpoints) to the death heatmap.",
       "default": true
+    },
+    "goals-title": {
+      "type": "title",
+      "name": "Goals"
+    },
+    "daily-goal": {
+      "type": "int",
+      "name": "Daily pass goal",
+      "description": "How many passes to aim for each day. Shown in the HUD, with a streak for days in a row you hit it. 0 turns it off.",
+      "default": 0,
+      "min": 0,
+      "max": 500,
+      "control": {
+        "slider": true,
+        "arrows": true,
+        "slider-step": 5,
+        "arrow-step": 1,
+        "big-arrows": true,
+        "big-arrow-step": 10
+      }
     },
     "anticheat-title": {
       "type": "title",
@@ -206,6 +237,25 @@
       "default": [
         "H"
       ]
+    },
+    "backups-title": {
+      "type": "title",
+      "name": "Backups"
+    },
+    "auto-backups": {
+      "type": "bool",
+      "name": "Daily backups",
+      "description": "Once a day, save a copy of a level's progress the first time you open it. Restore one from <cy>Blitz Trainer > Manage</c>.",
+      "default": true
+    },
+    "backups-keep": {
+      "type": "int",
+      "name": "Backups to keep",
+      "description": "Days of backups kept per level. Older ones are deleted.",
+      "default": 7,
+      "min": 1,
+      "max": 60,
+      "enable-if": "auto-backups"
     }
   }
 }

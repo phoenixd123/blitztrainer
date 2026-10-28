@@ -18,6 +18,9 @@
 - **Death heatmap** with your worst spots and the ranges with the lowest pass rate.
 - **Changed start positions?** Rebuild the profile and keep stats for every range that didn't move.
 - **Run validation.** Noclip and speedhack attempts are ignored; lag spikes aren't flagged.
+- **Smart routing.** Go through ranges in order, weakest first, or at random.
+- **Daily goal and history.** Set a daily pass goal and keep a streak; see when every stage was cleared and roughly how long is left.
+- **Daily backups** you can restore from the Manage screen.
 - **Undo last run**, **export/import** via clipboard, per-range stats (passes, streak, attempts, best progress, time, attempts to first pass) and session stats.
 
 Platformer levels aren't supported. The Blitzkrieg method was created by **Rudder**.

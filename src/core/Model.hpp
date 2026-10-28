@@ -39,6 +39,7 @@ struct Range {
 
 struct Stage {
     std::vector<Range> ranges;
+    int64_t completedAt = 0; // unix seconds when the last range was cleared (0 = unknown / not yet)
     bool done() const;
     int doneCount() const;
 };
@@ -133,9 +134,26 @@ void refreshDone(Profile& p, TrainingRules const& rules);
 // range has the same start and end X (used when start positions change).
 int mergeStats(Profile& fresh, Profile const& old, float tolerance = 2.f);
 
-// Checkpoint index the player should spawn at next: the first unfinished range
-// of the current stage at or after `afterFrom` (wrapping around).
-std::optional<int> nextTargetStart(Profile const& p, int afterFrom = -1);
+enum class RouteOrder : int {
+    InOrder = 0, // left to right through the stage
+    Weakest = 1, // the unfinished range with the lowest pass rate first
+    Random = 2,  // any unfinished range
+};
+
+// Checkpoint index the player should spawn at next, chosen among the
+// unfinished ranges of the current stage. `afterFrom` is the range the player
+// just left: InOrder continues after it (wrapping around), Weakest and Random
+// avoid repeating it when there's another choice. `seed` drives Random.
+std::optional<int> nextTargetStart(Profile const& p, int afterFrom = -1,
+    RouteOrder order = RouteOrder::InOrder, uint32_t seed = 0);
+
+// Pass rate used to rank ranges for Weakest-first (Laplace-smoothed, so a
+// range with no attempts sits at 50%).
+float passRate(RangeStats const& s);
+
+// Rough time left, extrapolated from how long cleared ranges took per section.
+// Empty until at least 3 ranges are cleared with time on them.
+std::optional<double> estimateRemaining(Profile const& p);
 
 // The range a run starting at `startIdx` would be aimed at (for the HUD).
 std::optional<std::pair<int, int>> targetFor(Profile const& p, int startIdx);

@@ -2,6 +2,9 @@
 
 #include <algorithm>
 #include <cctype>
+#include <ctime>
+
+#include "core/Time.hpp"
 
 using namespace geode::prelude;
 
@@ -83,6 +86,11 @@ matjson::Value toJson(Profile const& p) {
         stages.push(ranges);
     }
     v["stages"] = stages;
+
+    // stage clear times, kept beside "stages" so older versions can still read the file
+    auto stageDone = matjson::Value::array();
+    for (auto const& st : p.stages) stageDone.push(st.completedAt);
+    v["stageDone"] = stageDone;
     return v;
 }
 
@@ -140,6 +148,14 @@ Result<Profile> fromJson(matjson::Value const& v) {
         }
     }
     if (p.stages.empty()) p.stages = generateStages(n, p.style);
+
+    if (v.contains("stageDone")) {
+        if (auto arr = v["stageDone"].asArray(); arr && arr.unwrap().size() == p.stages.size()) {
+            auto const& times = arr.unwrap();
+            for (size_t i = 0; i < times.size(); ++i)
+                p.stages[i].completedAt = static_cast<int64_t>(times[i].asInt().unwrapOr(0));
+        }
+    }
     return Ok(std::move(p));
 }
 
@@ -158,6 +174,7 @@ void Store::open(std::string const& key, std::string const& levelName) {
     m_levelName = levelName;
     m_profile.reset();
     m_undo.reset();
+    m_undoPass = false;
     sessionAttempts = 0;
     sessionPasses = 0;
     sessionTime = 0.0;
@@ -184,6 +201,7 @@ void Store::open(std::string const& key, std::string const& levelName) {
     }
     m_profile = std::move(prof.unwrap());
     refreshDone(*m_profile, rules());
+    dailyBackup();
 }
 
 void Store::close() {
@@ -194,12 +212,18 @@ void Store::close() {
     m_undo.reset();
 }
 
-void Store::setProfile(Profile p) {
+void Store::setProfile(Profile p, bool keepCurrentForUndo) {
     p.levelKey = m_key;
     if (p.levelName.empty()) p.levelName = m_levelName;
+    if (keepCurrentForUndo && m_profile) {
+        m_undo = std::move(*m_profile);
+        m_undoPass = false;
+    } else {
+        m_undo.reset();
+        m_undoPass = false;
+    }
     m_profile = std::move(p);
     refreshDone(*m_profile, rules());
-    m_undo.reset();
     save();
 }
 
@@ -242,14 +266,120 @@ Result<Profile> Store::importText(std::string const& raw) const {
 
 void Store::snapshot() {
     if (m_profile) m_undo = *m_profile;
+    m_undoPass = false;
 }
 
 bool Store::undo() {
     if (!m_undo) return false;
+    auto shown = m_profile ? m_profile->shownPct : std::vector<float>{};
     m_profile = std::move(*m_undo);
+    if (m_profile->shownPct.empty()) m_profile->shownPct = shown;
     m_undo.reset();
+    if (m_undoPass) unrecordPass();
+    m_undoPass = false;
     save();
     return true;
+}
+
+// ---------------------------------------------------------------- daily goal
+
+int Store::dailyGoal() const {
+    return static_cast<int>(std::clamp<int64_t>(Mod::get()->getSettingValue<int64_t>("daily-goal"), 0, 1000));
+}
+
+DailyStatus Store::daily() const {
+    auto mod = Mod::get();
+    auto today = dayKey(static_cast<int64_t>(std::time(nullptr)));
+    DailyStatus d;
+    d.goal = dailyGoal();
+    d.passes = mod->getSavedValue<std::string>("daily-day", "") == today ? static_cast<int>(mod->getSavedValue<int64_t>("daily-passes", 0)) : 0;
+    auto lastGoal = mod->getSavedValue<std::string>("goal-last-day", "");
+    d.reachedToday = lastGoal == today;
+    d.streak = (d.reachedToday || isDayBefore(lastGoal, today)) ? static_cast<int>(mod->getSavedValue<int64_t>("goal-streak", 0)) : 0;
+    return d;
+}
+
+bool Store::recordPass() {
+    sessionPasses += 1;
+    m_undoPass = true;
+    auto mod = Mod::get();
+    auto today = dayKey(static_cast<int64_t>(std::time(nullptr)));
+    int64_t passes = mod->getSavedValue<std::string>("daily-day", "") == today ? mod->getSavedValue<int64_t>("daily-passes", 0) : 0;
+    passes += 1;
+    mod->setSavedValue<std::string>("daily-day", today);
+    mod->setSavedValue<int64_t>("daily-passes", passes);
+
+    int goal = dailyGoal();
+    if (goal <= 0 || passes != goal) return false;
+    auto lastGoal = mod->getSavedValue<std::string>("goal-last-day", "");
+    if (lastGoal == today) return false;
+    int64_t streak = isDayBefore(lastGoal, today) ? mod->getSavedValue<int64_t>("goal-streak", 0) + 1 : 1;
+    mod->setSavedValue<int64_t>("goal-streak", streak);
+    mod->setSavedValue<std::string>("goal-last-day", today);
+    return true;
+}
+
+void Store::unrecordPass() {
+    sessionPasses = std::max(0, sessionPasses - 1);
+    auto mod = Mod::get();
+    auto today = dayKey(static_cast<int64_t>(std::time(nullptr)));
+    if (mod->getSavedValue<std::string>("daily-day", "") != today) return;
+    int64_t passes = std::max<int64_t>(0, mod->getSavedValue<int64_t>("daily-passes", 0) - 1);
+    mod->setSavedValue<int64_t>("daily-passes", passes);
+    // undoing the pass that reached the goal takes the day's goal back too
+    if (passes + 1 == dailyGoal() && mod->getSavedValue<std::string>("goal-last-day", "") == today) {
+        int64_t streak = std::max<int64_t>(0, mod->getSavedValue<int64_t>("goal-streak", 0) - 1);
+        mod->setSavedValue<int64_t>("goal-streak", streak);
+        mod->setSavedValue<std::string>("goal-last-day", streak > 0 ? dayKey(static_cast<int64_t>(std::time(nullptr)) - 86400) : std::string());
+    }
+}
+
+// ---------------------------------------------------------------- backups
+
+std::filesystem::path Store::backupDir() const {
+    return Mod::get()->getSaveDir() / "backups" / m_key;
+}
+
+void Store::dailyBackup() {
+    if (!m_profile || m_key.empty() || !Mod::get()->getSettingValue<bool>("auto-backups")) return;
+    std::error_code ec;
+    auto dir = backupDir();
+    std::filesystem::create_directories(dir, ec);
+    auto path = dir / (dayKey(static_cast<int64_t>(std::time(nullptr))) + ".json");
+    if (std::filesystem::exists(path, ec)) return; // one per day: the state before that day's practice
+
+    auto res = file::writeStringSafe(path, toJson(*m_profile).dump(matjson::NO_INDENTATION));
+    if (!res) {
+        log::error("Failed to write backup: {}", res.unwrapErr());
+        return;
+    }
+    auto keep = static_cast<size_t>(std::clamp<int64_t>(Mod::get()->getSettingValue<int64_t>("backups-keep"), 1, 60));
+    auto days = backups();
+    for (size_t i = keep; i < days.size(); ++i)
+        std::filesystem::remove(dir / (days[i] + ".json"), ec);
+}
+
+std::vector<std::string> Store::backups() const {
+    std::vector<std::string> days;
+    if (m_key.empty()) return days;
+    std::error_code ec;
+    auto dir = backupDir();
+    if (!std::filesystem::is_directory(dir, ec)) return days;
+    for (auto const& entry : std::filesystem::directory_iterator(dir, ec)) {
+        if (!entry.is_regular_file(ec) || entry.path().extension() != ".json") continue;
+        auto stem = entry.path().stem().string();
+        if (stem.size() == 10) days.push_back(stem);
+    }
+    std::sort(days.begin(), days.end(), std::greater<>());
+    return days;
+}
+
+Result<Profile> Store::loadBackup(std::string const& day) const {
+    auto text = file::readString(backupDir() / (day + ".json"));
+    if (!text) return Err("Couldn't read that backup");
+    auto json = matjson::parse(text.unwrap());
+    if (!json) return Err("That backup is damaged");
+    return fromJson(json.unwrap());
 }
 
 TrainingRules Store::rules() const {

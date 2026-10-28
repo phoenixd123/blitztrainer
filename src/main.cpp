@@ -23,4 +23,5 @@ $on_mod(Loaded) {
     listenForSettingChanges<std::string>("hud-position", [](std::string) { bt::game::refreshHud(); });
     listenForSettingChanges<double>("hud-scale", [](double) { bt::game::refreshHud(); });
     listenForSettingChanges<double>("hud-opacity", [](double) { bt::game::refreshHud(); });
+    listenForSettingChanges<int64_t>("daily-goal", [](int64_t) { bt::game::refreshHud(); });
 }

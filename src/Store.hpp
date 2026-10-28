@@ -8,6 +8,13 @@
 
 namespace bt {
 
+struct DailyStatus {
+    int passes = 0;          // passes recorded today
+    int goal = 0;            // 0 = no goal set
+    int streak = 0;          // days in a row the goal was reached
+    bool reachedToday = false;
+};
+
 // Owns the profile of the level that is currently being played and handles
 // persistence (one JSON file per level in the mod's save folder).
 class Store {
@@ -23,7 +30,9 @@ public:
     std::string const& key() const { return m_key; }
     std::string const& levelName() const { return m_levelName; }
 
-    void setProfile(Profile p);
+    // Replaces the active profile and saves it. With keepCurrentForUndo the
+    // replaced profile can be brought back with undo().
+    void setProfile(Profile p, bool keepCurrentForUndo = false);
     void deleteProfile();
     void save();
 
@@ -38,6 +47,15 @@ public:
 
     TrainingRules rules() const;
 
+    // Daily pass goal. recordPass() returns true when this pass reached the goal.
+    int dailyGoal() const;
+    DailyStatus daily() const;
+    bool recordPass();
+
+    // Automatic daily backups of the active profile (newest day first).
+    std::vector<std::string> backups() const;
+    geode::Result<Profile> loadBackup(std::string const& day) const;
+
     // Session counters, reset when the level is left
     int sessionAttempts = 0;
     int sessionPasses = 0;
@@ -45,6 +63,10 @@ public:
 
 private:
     std::filesystem::path pathFor(std::string const& key) const;
+    std::filesystem::path backupDir() const;
+    void dailyBackup();
+    void unrecordPass();
+    bool m_undoPass = false; // the run kept in m_undo was a pass
 
     std::string m_key;
     std::string m_levelName;

@@ -6,6 +6,7 @@
 #include "../Game.hpp"
 #include "../Store.hpp"
 #include "../core/Model.hpp"
+#include "../core/Time.hpp"
 
 using namespace geode::prelude;
 
@@ -50,6 +51,31 @@ namespace {
         if (auto p = s.profile(); p && !p->levelName.empty()) return p->levelName;
         return s.levelName();
     }
+
+    CCMenuItemSpriteExtra* textButton(char const* text, float scale, Function<void(CCMenuItemSpriteExtra*)> cb, char const* bg = "GJ_button_01.png") {
+        auto spr = ButtonSprite::create(text, "goldFont.fnt", bg, scale);
+        return CCMenuItemExt::createSpriteExtra(spr, std::move(cb));
+    }
+
+    // Makes an imported or restored profile the active one. When its start
+    // positions differ from the level's, the stats of matching ranges move
+    // into a freshly built profile. Returns the message to show.
+    Result<std::string> adoptProfile(Profile incoming, bool keepCurrentForUndo) {
+        auto const& cps = game::checkpoints();
+        if (cps.size() < 2 || game::levelLength() <= 0.f) return Err("Open the level first");
+        auto& store = Store::get();
+        if (checkpointsMatch(incoming, cps)) {
+            store.setProfile(std::move(incoming), keepCurrentForUndo);
+            game::clearMismatch();
+            return Ok(std::string());
+        }
+        auto fresh = makeProfile(store.key(), currentLevelName(), levelStartPosXs(), game::levelLength(),
+            incoming.style, static_cast<int64_t>(std::time(nullptr)));
+        int merged = mergeStats(fresh, incoming);
+        store.setProfile(std::move(fresh), keepCurrentForUndo);
+        game::clearMismatch();
+        return Ok(fmt::format("{} ranges matched this level's start positions", merged));
+    }
 }
 
 // ============================================================ TrainerPopup
@@ -75,10 +101,6 @@ bool TrainerPopup::init(bool fromPause) {
     return true;
 }
 
-CCMenuItemSpriteExtra* TrainerPopup::textButton(char const* text, float scale, Function<void(CCMenuItemSpriteExtra*)> cb, char const* bg) {
-    auto spr = ButtonSprite::create(text, "goldFont.fnt", bg, scale);
-    return CCMenuItemExt::createSpriteExtra(spr, std::move(cb));
-}
 
 void TrainerPopup::rebuild() {
     m_content->removeAllChildren();
@@ -197,15 +219,24 @@ void TrainerPopup::buildProfile() {
         : fmt::format("Stage {}/{}  |  {:.0f}% ({}/{} ranges)  |  {} attempts  |  {}",
             cur + 1, p.stages.size(), p.overallProgress() * 100.f, p.doneRanges(), p.totalRanges(),
             p.totalAttempts, formatTime(p.totalTime));
+    if (cur >= 0) {
+        if (auto eta = estimateRemaining(p)) summary += fmt::format("  |  ~{} left", formatTime(*eta));
+    }
     auto sum = label(summary, "bigFont.fnt", 0.32f);
     sum->setPosition({m_size.width / 2, m_size.height - 58.f});
     limitWidth(sum, m_size.width - 30.f);
     m_content->addChild(sum);
 
-    auto session = label(fmt::format("Session: {} attempts, {} passes, {}   |   Rule: {} pass{}{}",
-        store.sessionAttempts, store.sessionPasses, formatTime(store.sessionTime),
-        rules.requiredPasses, rules.requiredPasses == 1 ? "" : "es", rules.consecutive ? " in a row" : ""),
-        "chatFont.fnt", 0.6f);
+    std::string sessionText = fmt::format("Session: {} attempts, {} passes, {}",
+        store.sessionAttempts, store.sessionPasses, formatTime(store.sessionTime));
+    auto d = store.daily();
+    if (d.goal > 0) {
+        sessionText += fmt::format("   |   Today: {}/{}{}", d.passes, d.goal, d.passes >= d.goal ? " done" : "");
+        if (d.streak > 1) sessionText += fmt::format(", {}-day streak", d.streak);
+    }
+    sessionText += fmt::format("   |   Rule: {} pass{}{}", rules.requiredPasses, rules.requiredPasses == 1 ? "" : "es",
+        rules.consecutive ? " in a row" : "");
+    auto session = label(sessionText, "chatFont.fnt", 0.6f);
     session->setColor({190, 220, 255});
     session->setPosition({m_size.width / 2, m_size.height - 71.f});
     limitWidth(session, m_size.width - 30.f);
@@ -249,10 +280,12 @@ void TrainerPopup::buildProfile() {
     menu->setPosition({m_size.width / 2, 22.f});
     if (cur >= 0) menu->addChild(textButton("Go to target", 0.55f, [this](auto) { onGoTarget(); }));
     menu->addChild(textButton("Heatmap", 0.55f, [](auto) { HeatmapPopup::create()->show(); }, "GJ_button_02.png"));
-    if (store.canUndo()) menu->addChild(textButton("Undo run", 0.55f, [this](auto) { onUndo(); }, "GJ_button_05.png"));
-    menu->addChild(textButton("Export", 0.55f, [this](auto) { onExport(); }, "GJ_button_04.png"));
-    menu->addChild(textButton("Import", 0.55f, [this](auto) { onImport(); }, "GJ_button_04.png"));
-    menu->addChild(textButton("Reset", 0.55f, [this](auto) { onReset(); }, "GJ_button_06.png"));
+    menu->addChild(textButton("History", 0.55f, [](auto) { HistoryPopup::create()->show(); }, "GJ_button_02.png"));
+    if (store.canUndo()) menu->addChild(textButton("Undo", 0.55f, [this](auto) { onUndo(); }, "GJ_button_05.png"));
+    menu->addChild(textButton("Manage", 0.55f, [this](auto) {
+        Ref<TrainerPopup> self = this;
+        ManagePopup::create([self] { self->m_viewStage = -1; self->rebuild(); })->show();
+    }, "GJ_button_04.png"));
     menu->setLayout(RowLayout::create()->setGap(5.f));
     m_content->addChild(menu);
 }
@@ -359,17 +392,12 @@ void TrainerPopup::onGoTarget() {
 
 void TrainerPopup::onUndo() {
     if (Store::get().undo()) {
-        Notification::create("Last run undone", NotificationIcon::Success)->show();
+        Notification::create("Undone", NotificationIcon::Success)->show();
+        game::recheckProfile();
         game::refreshHud();
     }
+    m_viewStage = -1;
     rebuild();
-}
-
-void TrainerPopup::onExport() {
-    auto text = Store::get().exportText();
-    if (text.empty()) return;
-    if (clipboard::write(text)) Notification::create("Profile copied to clipboard", NotificationIcon::Success)->show();
-    else Notification::create("Couldn't access the clipboard", NotificationIcon::Error)->show();
 }
 
 void TrainerPopup::onImport() {
@@ -378,38 +406,16 @@ void TrainerPopup::onImport() {
         Notification::create(res.unwrapErr(), NotificationIcon::Error)->show();
         return;
     }
-    auto imported = std::move(res.unwrap());
-    auto const& cps = game::checkpoints();
-    if (cps.size() < 2 || game::levelLength() <= 0.f) {
-        Notification::create("Open the level first", NotificationIcon::Error)->show();
+    auto adopted = adoptProfile(std::move(res.unwrap()), false);
+    if (!adopted) {
+        Notification::create(adopted.unwrapErr(), NotificationIcon::Error)->show();
         return;
     }
-    if (!checkpointsMatch(imported, cps)) {
-        // different start positions: keep what matches
-        auto fresh = makeProfile(Store::get().key(), currentLevelName(), levelStartPosXs(),
-            game::levelLength(), imported.style, static_cast<int64_t>(std::time(nullptr)));
-        int merged = mergeStats(fresh, imported);
-        Store::get().setProfile(std::move(fresh));
-        Notification::create(fmt::format("Imported, {} ranges matched this level", merged), NotificationIcon::Success)->show();
-    } else {
-        Store::get().setProfile(std::move(imported));
-        Notification::create("Profile imported", NotificationIcon::Success)->show();
-    }
-    game::clearMismatch();
+    auto msg = adopted.unwrap();
+    Notification::create(msg.empty() ? std::string("Profile imported") : "Imported: " + msg, NotificationIcon::Success)->show();
+    game::refreshHud();
+    m_viewStage = -1;
     rebuild();
-}
-
-void TrainerPopup::onReset() {
-    createQuickPopup("Reset progress?",
-        "This deletes all Blitz Trainer progress for this level. Export first if you might want it back.",
-        "Cancel", "Reset",
-        [this](auto, bool yes) {
-            if (!yes) return;
-            Store::get().deleteProfile();
-            game::refreshHud();
-            m_viewStage = -1;
-            rebuild();
-        });
 }
 
 void TrainerPopup::createProfile(bool lite) {
@@ -436,6 +442,225 @@ void TrainerPopup::rebuildKeepingProgress() {
     Notification::create(fmt::format("Rebuilt, kept progress on {} ranges", merged), NotificationIcon::Success)->show();
     m_viewStage = -1;
     rebuild();
+}
+
+// ============================================================ ManagePopup
+
+ManagePopup* ManagePopup::create(std::function<void()> onChange) {
+    auto ret = new ManagePopup();
+    if (ret->init(std::move(onChange))) {
+        ret->autorelease();
+        return ret;
+    }
+    delete ret;
+    return nullptr;
+}
+
+bool ManagePopup::init(std::function<void()> onChange) {
+    if (!Popup::init(360.f, 260.f)) return false;
+    m_onChange = std::move(onChange);
+    this->setTitle("Manage Progress");
+    m_content = CCNode::create();
+    m_content->setContentSize(m_size);
+    m_mainLayer->addChild(m_content);
+    build();
+    return true;
+}
+
+void ManagePopup::changed() {
+    game::refreshHud();
+    if (m_onChange) m_onChange();
+}
+
+void ManagePopup::build() {
+    m_content->removeAllChildren();
+    auto& store = Store::get();
+
+    auto top = CCMenu::create();
+    top->setContentSize({m_size.width - 30.f, 30.f});
+    top->setPosition({m_size.width / 2, m_size.height - 52.f});
+    top->addChild(textButton("Export", 0.6f, [](auto) {
+        auto text = Store::get().exportText();
+        if (text.empty()) return;
+        if (clipboard::write(text)) Notification::create("Profile copied to clipboard", NotificationIcon::Success)->show();
+        else Notification::create("Couldn't access the clipboard", NotificationIcon::Error)->show();
+    }, "GJ_button_04.png"));
+    top->addChild(textButton("Import", 0.6f, [this](auto) {
+        auto res = Store::get().importText(clipboard::read());
+        if (!res) {
+            Notification::create(res.unwrapErr(), NotificationIcon::Error)->show();
+            return;
+        }
+        auto adopted = adoptProfile(std::move(res.unwrap()), true);
+        if (!adopted) {
+            Notification::create(adopted.unwrapErr(), NotificationIcon::Error)->show();
+            return;
+        }
+        auto msg = adopted.unwrap();
+        Notification::create(msg.empty() ? std::string("Profile imported") : "Imported: " + msg, NotificationIcon::Success)->show();
+        changed();
+        build();
+    }, "GJ_button_04.png"));
+    top->addChild(textButton("Reset", 0.6f, [this](auto) {
+        Ref<ManagePopup> self = this;
+        createQuickPopup("Reset progress?",
+            "This deletes all Blitz Trainer progress for this level. Daily backups are kept.",
+            "Cancel", "Reset",
+            [self](auto, bool yes) {
+                if (!yes) return;
+                Store::get().deleteProfile();
+                self->changed();
+                self->onClose(nullptr);
+            });
+    }, "GJ_button_06.png"));
+    top->setLayout(RowLayout::create()->setGap(8.f));
+    m_content->addChild(top);
+
+    auto heading = label("Daily backups", "goldFont.fnt", 0.5f);
+    heading->setPosition({m_size.width / 2, m_size.height - 85.f});
+    m_content->addChild(heading);
+
+    auto days = store.backups();
+    CCSize listSize = {m_size.width - 40.f, 130.f};
+    auto bg = CCLayerColor::create({0, 0, 0, 70}, listSize.width, listSize.height);
+    bg->setPosition({20.f, 20.f});
+    m_content->addChild(bg);
+
+    if (days.empty()) {
+        auto empty = textBlock(Mod::get()->getSettingValue<bool>("auto-backups")
+                ? "No backups yet. One is saved the first time you open this level each day."
+                : "Daily backups are off. Turn them on in the mod's settings.",
+            "bigFont.fnt", 0.35f, listSize.width - 30.f);
+        empty->setPosition({listSize.width / 2, listSize.height / 2});
+        bg->addChild(empty);
+        handleTouchPriority(this);
+        return;
+    }
+
+    auto scroll = ScrollLayer::create(listSize);
+    scroll->setPosition({20.f, 20.f});
+    m_content->addChild(scroll);
+    constexpr float rowH = 28.f;
+    float totalH = std::max(listSize.height, rowH * days.size());
+    scroll->m_contentLayer->setContentSize({listSize.width, totalH});
+
+    for (size_t i = 0; i < days.size(); ++i) {
+        auto const& day = days[i];
+        float y = totalH - rowH * (i + 1);
+        auto row = CCLayerColor::create(i % 2 ? ccColor4B{255, 255, 255, 12} : ccColor4B{255, 255, 255, 25}, listSize.width, rowH - 2.f);
+        row->setPosition({0.f, y + 1.f});
+        scroll->m_contentLayer->addChild(row);
+
+        std::string info = day;
+        if (auto b = store.loadBackup(day)) {
+            auto const& bp = b.unwrap();
+            int cs = bp.currentStage();
+            info += cs < 0
+                ? std::string("   complete")
+                : fmt::format("   stage {}/{}, {:.0f}%", cs + 1, bp.stages.size(), bp.overallProgress() * 100.f);
+        } else {
+            info += "   (unreadable)";
+        }
+        auto text = label(info, "bigFont.fnt", 0.36f, {0.f, 0.5f});
+        text->setPosition({10.f, rowH / 2});
+        limitWidth(text, listSize.width - 90.f);
+        row->addChild(text);
+
+        auto menu = CCMenu::create();
+        menu->setPosition({listSize.width - 38.f, rowH / 2});
+        auto btn = textButton("Restore", 0.45f, [this, day](auto) {
+            auto loaded = Store::get().loadBackup(day);
+            if (!loaded) {
+                Notification::create(loaded.unwrapErr(), NotificationIcon::Error)->show();
+                return;
+            }
+            auto adopted = adoptProfile(std::move(loaded.unwrap()), true);
+            if (!adopted) {
+                Notification::create(adopted.unwrapErr(), NotificationIcon::Error)->show();
+                return;
+            }
+            Notification::create(fmt::format("Restored {}. Undo brings back what you had.", day), NotificationIcon::Success)->show();
+            changed();
+            this->onClose(nullptr);
+        });
+        btn->setPosition({0.f, 0.f});
+        menu->addChild(btn);
+        row->addChild(menu);
+    }
+    scroll->scrollToTop();
+    handleTouchPriority(this);
+}
+
+// ============================================================ HistoryPopup
+
+HistoryPopup* HistoryPopup::create() {
+    auto ret = new HistoryPopup();
+    if (ret->init()) {
+        ret->autorelease();
+        return ret;
+    }
+    delete ret;
+    return nullptr;
+}
+
+bool HistoryPopup::init() {
+    if (!Popup::init(400.f, 260.f)) return false;
+    this->setTitle("History");
+    auto p = Store::get().profile();
+    if (!p) return true;
+    int cur = p->currentStage();
+
+    std::string head = fmt::format("Started {}  |  {} attempts  |  {} played", shortDate(p->createdAt), p->totalAttempts, formatTime(p->totalTime));
+    if (cur < 0) head += fmt::format("  |  finished {}", shortDate(p->completedAt));
+    else if (auto eta = estimateRemaining(*p)) head += fmt::format("  |  ~{} left", formatTime(*eta));
+    auto headLabel = label(head, "bigFont.fnt", 0.3f);
+    headLabel->setPosition({m_size.width / 2, m_size.height - 45.f});
+    limitWidth(headLabel, m_size.width - 30.f);
+    m_mainLayer->addChild(headLabel);
+
+    CCSize listSize = {m_size.width - 30.f, m_size.height - 80.f};
+    auto bg = CCLayerColor::create({0, 0, 0, 70}, listSize.width, listSize.height);
+    bg->setPosition({15.f, 18.f});
+    m_mainLayer->addChild(bg);
+
+    auto scroll = ScrollLayer::create(listSize);
+    scroll->setPosition({15.f, 18.f});
+    m_mainLayer->addChild(scroll);
+    constexpr float rowH = 24.f;
+    float totalH = std::max(listSize.height, rowH * p->stages.size());
+    scroll->m_contentLayer->setContentSize({listSize.width, totalH});
+
+    for (size_t i = 0; i < p->stages.size(); ++i) {
+        auto const& st = p->stages[i];
+        int attempts = 0;
+        double time = 0.0;
+        for (auto const& r : st.ranges) {
+            attempts += r.s.attempts;
+            time += r.s.timePlayed;
+        }
+        bool done = st.done();
+        bool current = static_cast<int>(i) == cur;
+        float y = totalH - rowH * (i + 1);
+        ccColor4B tint = done ? ccColor4B{40, 160, 80, 80} : (current ? ccColor4B{255, 200, 60, 60} : ccColor4B{255, 255, 255, 12});
+        auto row = CCLayerColor::create(tint, listSize.width, rowH - 2.f);
+        row->setPosition({0.f, y + 1.f});
+        scroll->m_contentLayer->addChild(row);
+
+        auto name = label(fmt::format("Stage {}", i + 1), "goldFont.fnt", 0.45f, {0.f, 0.5f});
+        name->setPosition({8.f, rowH / 2});
+        row->addChild(name);
+
+        std::string status = done
+            ? (st.completedAt > 0 ? fmt::format("cleared {}", shortDate(st.completedAt)) : std::string("cleared"))
+            : (current ? fmt::format("in progress {}/{}", st.doneCount(), st.ranges.size()) : std::string("locked"));
+        std::string stats = fmt::format("{}   {} ranges   {} attempts   {}", status, st.ranges.size(), attempts, formatTime(time));
+        auto statLabel = label(stats, "chatFont.fnt", 0.6f, {0.f, 0.5f});
+        statLabel->setPosition({80.f, rowH / 2});
+        limitWidth(statLabel, listSize.width - 90.f);
+        row->addChild(statLabel);
+    }
+    scroll->scrollToTop();
+    return true;
 }
 
 // ============================================================ HeatmapPopup

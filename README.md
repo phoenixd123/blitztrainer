@@ -27,7 +27,15 @@ A Geode mod for Geometry Dash **2.2081** that automates the Blitzkrieg practice 
 | `T` | Go to next unfinished range |
 | `H` | Toggle HUD |
 
-All keys and rules are in the mod's settings (passes per range, passes in a row, long runs credit shorter ranges, auto-move spawn, practice-mode tracking, HUD position/scale/opacity, noclip and speedhack detection, notifications, sounds).
+All keys and rules are in the mod's settings (passes per range, passes in a row, long runs credit shorter ranges, auto-move spawn, route order, daily goal, practice-mode tracking, HUD position/scale/opacity, noclip and speedhack detection, notifications, sounds, backups).
+
+The Blitz Trainer menu also has:
+
+- **Heatmap**: where you die most and the ranges with the lowest pass rate.
+- **History**: when each stage was cleared, with its attempts and time, and a rough estimate of the time left.
+- **Manage**: export to or import from the clipboard, reset, and restore one of the daily backups. Importing or restoring can be undone.
+
+**Route order** decides which unfinished range auto-move and Go to target pick next: *In order* (left to right), *Weakest first* (lowest pass rate, so the ranges you struggle with come up more), or *Random*.
 
 ## How runs are counted
 
@@ -50,7 +58,7 @@ Profiles are saved per level in your GD save folder under `geode/mods/phoenixd12
 
 ## Releasing
 
-Bump `version` in `mod.json` and add a `# vX.Y.Z` section to `changelog.md`, then push a matching tag (`git tag v1.0.1 && git push --tags`). The workflow builds every platform and attaches the combined `.geode` to a GitHub release.
+Bump `version` in `mod.json` and add a `# vX.Y.Z` section to `changelog.md`, then push to `main`. On GitHub, open **Releases > Draft a new release**, create the tag `vX.Y.Z` and publish. The workflow builds every platform and attaches the combined `.geode` to that release.
 
 ## Build from source
 
@@ -64,7 +72,7 @@ geode build                           # or: cmake -B build && cmake --build buil
 `tests/model_test.cpp` covers the training logic and runs on any machine:
 
 ```sh
-c++ -std=c++20 -Isrc tests/model_test.cpp src/core/Model.cpp -o model_test && ./model_test
+c++ -std=c++20 -Isrc tests/model_test.cpp src/core/Model.cpp src/core/Time.cpp -o model_test && ./model_test
 ```
 
 ## Notes

@@ -280,6 +280,7 @@ RunResult applyRun(Profile& p, RunInput const& run, TrainingRules const& rules, 
     }
 
     res.stageCompleted = !stageWasDone && stage.done();
+    if (res.stageCompleted) stage.completedAt = now;
     if (!wasComplete && p.complete()) {
         res.profileCompleted = true;
         p.completedAt = now;
@@ -288,9 +289,12 @@ RunResult applyRun(Profile& p, RunInput const& run, TrainingRules const& rules, 
 }
 
 void refreshDone(Profile& p, TrainingRules const& rules) {
-    for (auto& st : p.stages)
+    for (auto& st : p.stages) {
         for (auto& rg : st.ranges)
             rg.done = isRangeDone(rg.s, rules);
+        if (!st.done()) st.completedAt = 0; // reopened by stricter rules
+    }
+    if (!p.complete()) p.completedAt = 0;
 }
 
 int mergeStats(Profile& fresh, Profile const& old, float tolerance) {
@@ -322,14 +326,58 @@ int mergeStats(Profile& fresh, Profile const& old, float tolerance) {
     return merged;
 }
 
-std::optional<int> nextTargetStart(Profile const& p, int afterFrom) {
+float passRate(RangeStats const& s) {
+    return (static_cast<float>(s.passes) + 1.f) / (static_cast<float>(s.attempts) + 2.f);
+}
+
+std::optional<int> nextTargetStart(Profile const& p, int afterFrom, RouteOrder order, uint32_t seed) {
     int si = p.currentStage();
     if (si < 0) return std::nullopt;
     auto const& rs = p.stages[si].ranges;
-    // ranges are sorted by `from`; first unfinished one after afterFrom, else wrap
-    for (auto const& rg : rs) if (!rg.done && rg.from > afterFrom) return rg.from;
-    for (auto const& rg : rs) if (!rg.done) return rg.from;
-    return std::nullopt;
+
+    if (order == RouteOrder::InOrder) {
+        // ranges are sorted by `from`; first unfinished one after afterFrom, else wrap
+        for (auto const& rg : rs) if (!rg.done && rg.from > afterFrom) return rg.from;
+        for (auto const& rg : rs) if (!rg.done) return rg.from;
+        return std::nullopt;
+    }
+
+    std::vector<Range const*> open;
+    for (auto const& rg : rs) if (!rg.done) open.push_back(&rg);
+    if (open.empty()) return std::nullopt;
+    if (open.size() > 1) {
+        open.erase(std::remove_if(open.begin(), open.end(), [&](Range const* r) { return r->from == afterFrom; }), open.end());
+    }
+
+    if (order == RouteOrder::Random) return open[seed % open.size()]->from;
+
+    // Weakest: lowest pass rate, then the one you've got least far through, then leftmost
+    auto weakest = *std::min_element(open.begin(), open.end(), [](Range const* a, Range const* b) {
+        float ra = passRate(a->s), rb = passRate(b->s);
+        if (std::fabs(ra - rb) > 1e-6f) return ra < rb;
+        if (std::fabs(a->s.bestProgress - b->s.bestProgress) > 1e-6f) return a->s.bestProgress < b->s.bestProgress;
+        return a->from < b->from;
+    });
+    return weakest->from;
+}
+
+std::optional<double> estimateRemaining(Profile const& p) {
+    int doneCount = 0;
+    double doneSections = 0.0, doneTime = 0.0, openSections = 0.0;
+    for (auto const& st : p.stages) {
+        for (auto const& rg : st.ranges) {
+            double len = static_cast<double>(rg.to - rg.from);
+            if (rg.done) {
+                ++doneCount;
+                doneSections += len;
+                doneTime += rg.s.timePlayed;
+            } else {
+                openSections += len;
+            }
+        }
+    }
+    if (doneCount < 3 || doneSections <= 0.0 || doneTime <= 0.0) return std::nullopt;
+    return doneTime / doneSections * openSections;
 }
 
 std::optional<std::pair<int, int>> targetFor(Profile const& p, int startIdx) {

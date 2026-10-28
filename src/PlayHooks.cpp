@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <ctime>
+#include <random>
 
 #include "Game.hpp"
 #include "Store.hpp"
@@ -33,6 +34,18 @@ namespace {
     }
 
     std::vector<float> const kEmpty;
+
+    RouteOrder routeOrder() {
+        auto v = setting<std::string>("route-order");
+        if (v == "Weakest first") return RouteOrder::Weakest;
+        if (v == "Random") return RouteOrder::Random;
+        return RouteOrder::InOrder;
+    }
+
+    uint32_t randomSeed() {
+        static std::mt19937 rng(static_cast<uint32_t>(std::chrono::steady_clock::now().time_since_epoch().count()));
+        return rng();
+    }
 }
 
 class $modify(BTPlayLayer, PlayLayer) {
@@ -441,7 +454,15 @@ class $modify(BTPlayLayer, PlayLayer) {
         auto res = applyRun(*p, in, store.rules(), nowUnix());
         store.save();
 
+        bool goalReached = res.targetPassed && store.recordPass();
         if (res.counted) feedback(*p, res);
+        if (goalReached) {
+            auto d = store.daily();
+            notify(d.streak > 1
+                ? fmt::format("Daily goal reached! {} days in a row", d.streak)
+                : std::string("Daily goal reached!"));
+            if (!res.stageCompleted && !res.profileCompleted) playSound("achievement_01.ogg");
+        }
         autoRoute(*p, res);
         updateHud();
     }
@@ -467,13 +488,11 @@ class $modify(BTPlayLayer, PlayLayer) {
                 : fmt::format("Cleared {} ranges  ({}/{} in stage)", res.newlyDone.size(), stage.doneCount(), stage.ranges.size());
             notify(msg);
             playSound("highscoreGet02.ogg");
-            Store::get().sessionPasses += 1;
             return;
         }
         if (res.targetPassed) {
             notify(fmt::format("Pass {}  ({}/{})", rangeText(p, t), std::min(t.s.passes, need), need));
             playSound("counter003.ogg");
-            Store::get().sessionPasses += 1;
         }
     }
 
@@ -484,7 +503,7 @@ class $modify(BTPlayLayer, PlayLayer) {
         auto tf = targetFor(p, spawn);
         bool spawnStillUseful = tf && !p.stages[tf->first].ranges[tf->second].done;
         if (spawnStillUseful) return;
-        if (auto next = nextTargetStart(p, spawn)) queueSpawn(*next);
+        if (auto next = nextTargetStart(p, spawn, routeOrder(), randomSeed())) queueSpawn(*next);
     }
 
     void queueSpawn(int idx) {
@@ -548,7 +567,12 @@ class $modify(BTPlayLayer, PlayLayer) {
     bool goTarget(bool fromPause) {
         auto p = trackedProfile();
         if (!p) return false;
-        auto next = nextTargetStart(*p, -1);
+        // pressing it again moves on instead of restarting the same range
+        int spawn = spawnIndex();
+        auto tf = targetFor(*p, spawn);
+        bool onOpenRange = tf && tf->first == p->currentStage() && !p->stages[tf->first].ranges[tf->second].done;
+        auto order = routeOrder();
+        auto next = nextTargetStart(*p, onOpenRange ? spawn : -1, order, randomSeed());
         if (!next) return false;
         return switchSpawn(*next, fromPause);
     }
@@ -657,6 +681,12 @@ class $modify(BTPlayLayer, PlayLayer) {
                 auto const& st = p->stages[si];
                 l1 = fmt::format("Stage {}/{}   {}/{} ranges   {:.0f}% total",
                     si + 1, p->stages.size(), st.doneCount(), st.ranges.size(), progress * 100.f);
+                auto d = store.daily();
+                if (d.goal > 0) {
+                    l1 += d.passes >= d.goal
+                        ? fmt::format("   today {}/{} done", d.passes, d.goal)
+                        : fmt::format("   today {}/{}", d.passes, d.goal);
+                }
 
                 int spawn = f->runStart >= 0 ? f->runStart : spawnIndex();
                 auto tf = targetFor(*p, spawn);
@@ -724,6 +754,12 @@ float levelLength() { return pl() ? pl()->m_levelLength : 0.f; }
 int startPosCount() { return pl() ? pl()->startPosCount() : 0; }
 bool profileMismatch() { return pl() && pl()->m_fields->mismatch; }
 void clearMismatch() { if (pl()) { pl()->m_fields->mismatch = false; pl()->updateHud(); } }
+void recheckProfile() {
+    if (!pl()) return;
+    auto p = Store::get().profile();
+    pl()->m_fields->mismatch = p && !checkpointsMatch(*p, pl()->m_fields->checkpoints);
+    pl()->updateHud();
+}
 int currentSpawnIndex() { return pl() ? pl()->spawnIndex() : -1; }
 bool switchTo(int idx, bool fromPause) { return pl() && pl()->switchSpawn(idx, fromPause); }
 bool goToTarget(bool fromPause) { return pl() && pl()->goTarget(fromPause); }
